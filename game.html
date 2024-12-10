@@ -1,171 +1,267 @@
-import 'package:flutter/material.dart';
-import '../models/level_model.dart';
-
-class GameScreen extends StatefulWidget {
-  @override
-  _GameScreenState createState() => _GameScreenState();
-}
-
-class _GameScreenState extends State<GameScreen> {
-  double ballX = 0.0;
-  double ballY = 0.0;
-  double ballDX = 0.02;
-  double ballDY = 0.02;
-  double paddleX = 0.4;
-  final double paddleWidth = 0.3;
-
-  int currentLevel = 0; // Start with the first level
-  List<List<bool>> blocks = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadLevel();
-    _startGameLoop();
-  }
-
-  void _loadLevel() {
-    if (currentLevel >= Level.levels.length) {
-      // All levels completed, reset to the first level
-      currentLevel = 0;
-    }
-    blocks = Level.levels[currentLevel].layout.map((row) => [...row]).toList();
-  }
-
-  void _startGameLoop() {
-    Future.delayed(Duration(milliseconds: 16), () {
-      if (!mounted) return;
-      setState(() {
-        _updateBallPosition();
-      });
-      _startGameLoop();
-    });
-  }
-
-  void _updateBallPosition() {
-    ballX += ballDX;
-    ballY += ballDY;
-
-    if (ballX <= -1 || ballX >= 1) ballDX = -ballDX;
-    if (ballY <= -1) ballDY = -ballDY;
-
-    if (ballY >= 0.9 && ballX >= paddleX && ballX <= paddleX + paddleWidth) {
-      ballDY = -ballDY;
-    }
-
-    _checkBlockCollisions();
-
-    if (ballY > 1) {
-      _resetGame();
-    }
-
-    if (_allBlocksCleared()) {
-      _nextLevel();
-    }
-  }
-
-  void _checkBlockCollisions() {
-    double blockWidth = 2 / blocks[0].length;
-    double blockHeight = 0.2 / blocks.length;
-
-    for (int i = 0; i < blocks.length; i++) {
-      for (int j = 0; j < blocks[i].length; j++) {
-        if (blocks[i][j]) {
-          double blockX = -1 + j * blockWidth;
-          double blockY = -1 + i * blockHeight;
-
-          if (ballX >= blockX &&
-              ballX <= blockX + blockWidth &&
-              ballY >= blockY &&
-              ballY <= blockY + blockHeight) {
-            blocks[i][j] = false;
-            ballDY = -ballDY;
-          }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsive Block Destroy Game</title>
+    <style>
+        body {
+            margin: 0;
+            background: linear-gradient(120deg, #8e44ad, #3498db, #e74c3c, #2ecc71);
+            background-size: 400% 400%;
+            animation: gradientAnimation 10s infinite;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
         }
-      }
-    }
-  }
+        canvas {
+            display: block;
+            border: 2px solid #fff;
+        }
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .start-screen, .game-over-screen {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 2;
+        }
+        .start-screen h1, .game-over-screen h1 {
+            color: #fff;
+            margin-bottom: 20px;
+        }
+        .logo {
+            margin-bottom: 20px;
+        }
+        .start-screen img {
+            width: 200px;
+            height: auto;
+        }
+        .start-screen button, .game-over-screen button {
+            padding: 10px 20px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="start-screen" id="startScreen">
+        <img src="logo.png" alt="Game Logo" class="logo">
+        <h1>Block Destroy Game</h1>
+        <button onclick="startGame()">Start Game</button>
+    </div>
 
-  bool _allBlocksCleared() {
-    for (var row in blocks) {
-      if (row.contains(true)) return false;
-    }
-    return true;
-  }
+    <div class="game-over-screen" id="gameOverScreen">
+        <h1>Game Over</h1>
+        <button onclick="startGame()">Restart</button>
+    </div>
 
-  void _nextLevel() {
-    currentLevel++;
-    _loadLevel();
-    _resetBall();
-  }
+    <canvas id="gameCanvas"></canvas>
 
-  void _resetGame() {
-    currentLevel = 0; // Reset to the first level
-    _loadLevel();
-    _resetBall();
-    Navigator.of(context).pushReplacementNamed('/start');
-  }
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
 
-  void _resetBall() {
-    ballX = 0.0;
-    ballY = 0.0;
-    ballDX = 0.02;
-    ballDY = 0.02;
-    paddleX = 0.4;
-  }
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onHorizontalDragUpdate: (details) {
-        setState(() {
-          paddleX += details.delta.dx / MediaQuery.of(context).size.width;
-          paddleX = paddleX.clamp(0.0, 1.0 - paddleWidth);
+        let ball = {
+            x: canvas.width / 2,
+            y: canvas.height - 100, // Start higher to avoid immediate game over
+            radius: Math.min(canvas.width, canvas.height) / 50,
+            dx: 3,
+            dy: -3,
+            speed: 2, // Initial speed
+        };
+
+        let paddle = {
+            width: canvas.width / 5,
+            height: Math.min(canvas.width, canvas.height) / 50,
+            x: (canvas.width - canvas.width / 5) / 2,
+            dx: 7
+        };
+
+        let blocks = [];
+        const blockRowCount = 5;
+        const blockColumnCount = Math.floor(canvas.width / 100);
+        const blockWidth = canvas.width / blockColumnCount - 10;
+        const blockHeight = Math.min(canvas.width, canvas.height) / 25;
+        const blockPadding = 10;
+        const blockOffsetTop = 50;
+        const blockOffsetLeft = 10;
+
+        let score = 0;
+        let rightPressed = false;
+        let leftPressed = false;
+        let gameState = "start";
+
+        function createBlocks() {
+            blocks = [];
+            for (let c = 0; c < blockColumnCount; c++) {
+                blocks[c] = [];
+                for (let r = 0; r < blockRowCount; r++) {
+                    blocks[c][r] = { x: 0, y: 0, status: 1 };
+                }
+            }
+        }
+
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawPaddle() {
+            ctx.beginPath();
+            ctx.rect(paddle.x, canvas.height - paddle.height - 10, paddle.width, paddle.height);
+            ctx.fillStyle = '#000';
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawBlocks() {
+            for (let c = 0; c < blockColumnCount; c++) {
+                for (let r = 0; r < blockRowCount; r++) {
+                    if (blocks[c][r].status === 1) {
+                        const blockX = c * (blockWidth + blockPadding) + blockOffsetLeft;
+                        const blockY = r * (blockHeight + blockPadding) + blockOffsetTop;
+                        blocks[c][r].x = blockX;
+                        blocks[c][r].y = blockY;
+                        ctx.beginPath();
+                        ctx.rect(blockX, blockY, blockWidth, blockHeight);
+                        ctx.fillStyle = '#fff';
+                        ctx.fill();
+                        ctx.closePath();
+                    }
+                }
+            }
+        }
+
+        function drawScore() {
+            ctx.font = '20px Arial';
+            ctx.fillStyle = '#fff';
+            ctx.fillText('Score: ' + score, 10, 30);
+        }
+
+        function movePaddle() {
+            if (rightPressed && paddle.x < canvas.width - paddle.width) {
+                paddle.x += paddle.dx;
+            } else if (leftPressed && paddle.x > 0) {
+                paddle.x -= paddle.dx;
+            }
+        }
+
+        function collisionDetection() {
+            for (let c = 0; c < blockColumnCount; c++) {
+                for (let r = 0; r < blockRowCount; r++) {
+                    const b = blocks[c][r];
+                    if (b.status === 1) {
+                        if (
+                            ball.x > b.x &&
+                            ball.x < b.x + blockWidth &&
+                            ball.y > b.y &&
+                            ball.y < b.y + blockHeight
+                        ) {
+                            ball.dy = -ball.dy;
+                            b.status = 0;
+                            score++;
+                            ball.speed += 0.2; // Increase speed after collision
+                        }
+                    }
+                }
+            }
+        }
+
+        function moveBall() {
+            ball.x += ball.dx * ball.speed;
+            ball.y += ball.dy * ball.speed;
+
+            if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
+                ball.dx = -ball.dx;
+            }
+
+            if (ball.y - ball.radius < 0) {
+                ball.dy = -ball.dy;
+            } else if (ball.y + ball.radius > canvas.height) {
+                if (ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
+                    ball.dy = -ball.dy;
+                    ball.speed += 0.2;
+                } else {
+                    gameState = "gameOver";
+                    showGameOverScreen();
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBall();
+            drawPaddle();
+            drawBlocks();
+            drawScore();
+            moveBall();
+            movePaddle();
+            collisionDetection();
+        }
+
+        function showStartScreen() {
+            document.getElementById('startScreen').style.display = 'flex';
+            document.getElementById('gameOverScreen').style.display = 'none';
+            document.getElementById('gameCanvas').style.display = 'none';
+        }
+
+        function showGameOverScreen() {
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOverScreen').style.display = 'flex';
+            document.getElementById('gameCanvas').style.display = 'none';
+        }
+
+        function startGame() {
+            gameState = "playing";
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOverScreen').style.display = 'none';
+            document.getElementById('gameCanvas').style.display = 'block';
+
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height - 100; // Start position adjusted
+            ball.speed = 2;
+            ball.dx = 3;
+            ball.dy = -3;
+            paddle.x = (canvas.width - paddle.width) / 2;
+            score = 0;
+            createBlocks();
+            setInterval(draw, 10);
+        }
+
+        createBlocks();
+        showStartScreen();
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') {
+                rightPressed = true;
+            } else if (e.key === 'ArrowLeft') {
+                leftPressed = true;
+            }
         });
-      },
-      child: Scaffold(
-        body: Stack(
-          children: [
-            Align(
-              alignment: Alignment(ballX, ballY),
-              child: Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Align(
-              alignment: Alignment(paddleX * 2 - 1, 0.95),
-              child: Container(
-                width: MediaQuery.of(context).size.width * paddleWidth,
-                height: 10,
-                color: Colors.blue,
-              ),
-            ),
-            for (int i = 0; i < blocks.length; i++)
-              for (int j = 0; j < blocks[i].length; j++)
-                if (blocks[i][j])
-                  Align(
-                    alignment: Alignment(
-                      -1 + j * (2 / blocks[i].length) + (1 / blocks[i].length),
-                      -1 + i * (0.2 / blocks.length) + (0.1 / blocks.length),
-                    ),
-                    child: Container(
-                      width: MediaQuery.of(context).size.width /
-                          blocks[i].length,
-                      height: MediaQuery.of(context).size.height * 0.2 /
-                          blocks.length,
-                      color: Colors.green,
-                    ),
-                  ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
-
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowRight') {
+                rightPressed = false;
+            } else if (e.key === 'ArrowLeft') {
+                leftPressed = false;
+            }
+        });
+    </script>
+</body>
+</html>
