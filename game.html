@@ -7,78 +7,130 @@
   <style>
     body {
       margin: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
+      overflow: hidden;
       background-color: #000;
     }
 
     canvas {
-      border: 1px solid #fff;
+      display: none;
+      width: 100vw; /* Full screen width */
+      height: 100vh; /* Full screen height */
       background: #111;
-      width: 100%;
-      max-width: 800px;
-      aspect-ratio: 4 / 3; /* Makes the canvas responsive */
-      display: block;
+    }
+
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      background: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    .screen button {
+      padding: 10px 20px;
+      margin-top: 20px;
+      font-size: 20px;
+      background: #ff0;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .screen button:hover {
+      background: #ffc107;
     }
   </style>
 </head>
 <body>
+  <div id="startScreen" class="screen">
+    <h1>Breakout Game</h1>
+    <button onclick="startGame()">Start Game</button>
+  </div>
+
+  <div id="gameOverScreen" class="screen" style="display: none;">
+    <h1>Game Over</h1>
+    <button onclick="startGame()">Play Again</button>
+  </div>
+
   <canvas id="gameCanvas"></canvas>
+
   <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+    const startScreen = document.getElementById('startScreen');
+    const gameOverScreen = document.getElementById('gameOverScreen');
 
-    // Make canvas responsive
-    canvas.width = canvas.clientWidth;
-    canvas.height = canvas.clientHeight;
+    // Set canvas size to fill the screen
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
     // Game variables
-    let paddleWidth = canvas.width / 5;
-    let paddleHeight = 10;
-    let paddleX = (canvas.width - paddleWidth) / 2;
+    let paddleWidth, paddleHeight, paddleX;
+    let ballRadius, ballX, ballY, ballDX, ballDY;
+    let brickRowCount, brickColumnCount, brickWidth, brickHeight, bricks;
+    let isGameRunning = false;
+    let touchStartX = 0;
 
-    let ballRadius = 8;
-    let ballX = canvas.width / 2;
-    let ballY = canvas.height - 30;
-    let ballDX = 2;
-    let ballDY = -2;
+    function initializeGameVariables() {
+      paddleWidth = canvas.width / 5;
+      paddleHeight = 10;
+      paddleX = (canvas.width - paddleWidth) / 2;
 
-    let brickRowCount = 5;
-    let brickColumnCount = 8;
-    let brickWidth = canvas.width / brickColumnCount - 10;
-    let brickHeight = 20;
-    let bricks = [];
+      ballRadius = 8;
+      ballX = canvas.width / 2;
+      ballY = canvas.height - 30;
+      ballDX = 3;
+      ballDY = -3;
 
-    // Initialize bricks
-    for (let r = 0; r < brickRowCount; r++) {
-      bricks[r] = [];
-      for (let c = 0; c < brickColumnCount; c++) {
-        bricks[r][c] = {
-          x: 0,
-          y: 0,
-          status: 1
-        };
+      brickRowCount = 5;
+      brickColumnCount = 8;
+      brickWidth = canvas.width / brickColumnCount - 10;
+      brickHeight = 20;
+      bricks = [];
+
+      // Initialize bricks
+      for (let r = 0; r < brickRowCount; r++) {
+        bricks[r] = [];
+        for (let c = 0; c < brickColumnCount; c++) {
+          bricks[r][c] = { x: 0, y: 0, status: 1 };
+        }
       }
     }
 
-    // Key controls
-    let rightPressed = false;
-    let leftPressed = false;
-
-    document.addEventListener('keydown', keyDownHandler, false);
-    document.addEventListener('keyup', keyUpHandler, false);
-
-    function keyDownHandler(e) {
-      if (e.key === "Right" || e.key === "ArrowRight") rightPressed = true;
-      if (e.key === "Left" || e.key === "ArrowLeft") leftPressed = true;
+    function startGame() {
+      initializeGameVariables();
+      startScreen.style.display = 'none';
+      gameOverScreen.style.display = 'none';
+      canvas.style.display = 'block';
+      isGameRunning = true;
+      draw();
     }
 
-    function keyUpHandler(e) {
-      if (e.key === "Right" || e.key === "ArrowRight") rightPressed = false;
-      if (e.key === "Left" || e.key === "ArrowLeft") leftPressed = false;
-    }
+    // Event listeners for touch controls
+    canvas.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+      const touchX = e.touches[0].clientX;
+      const deltaX = touchX - touchStartX;
+
+      paddleX += deltaX;
+
+      // Prevent paddle from moving out of bounds
+      if (paddleX < 0) paddleX = 0;
+      if (paddleX + paddleWidth > canvas.width) paddleX = canvas.width - paddleWidth;
+
+      touchStartX = touchX; // Update for continuous movement
+      e.preventDefault(); // Prevent scrolling
+    });
 
     function drawBall() {
       ctx.beginPath();
@@ -90,7 +142,7 @@
 
     function drawPaddle() {
       ctx.beginPath();
-      ctx.rect(paddleX, canvas.height - paddleHeight - 10, paddleWidth, paddleHeight);
+      ctx.rect(paddleX, canvas.height - paddleHeight - 20, paddleWidth, paddleHeight);
       ctx.fillStyle = "#0f0";
       ctx.fill();
       ctx.closePath();
@@ -121,7 +173,7 @@
           let b = bricks[r][c];
           if (b.status === 1) {
             if (
-              ballX > b.x && 
+              ballX > b.x &&
               ballX < b.x + brickWidth &&
               ballY > b.y &&
               ballY < b.y + brickHeight
@@ -135,6 +187,8 @@
     }
 
     function draw() {
+      if (!isGameRunning) return;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       drawBricks();
@@ -152,7 +206,7 @@
 
       // Ball collision with paddle
       if (
-        ballY + ballRadius > canvas.height - paddleHeight - 10 &&
+        ballY + ballRadius > canvas.height - paddleHeight - 20 &&
         ballX > paddleX &&
         ballX < paddleX + paddleWidth
       ) {
@@ -161,18 +215,15 @@
 
       // Game over
       if (ballY + ballRadius > canvas.height) {
-        alert("GAME OVER");
-        document.location.reload();
+        isGameRunning = false;
+        canvas.style.display = 'none';
+        gameOverScreen.style.display = 'flex';
+        return;
       }
-
-      // Paddle movement
-      if (rightPressed && paddleX < canvas.width - paddleWidth) paddleX += 7;
-      if (leftPressed && paddleX > 0) paddleX -= 7;
 
       requestAnimationFrame(draw);
     }
-
-    draw();
   </script>
 </body>
 </html>
+
