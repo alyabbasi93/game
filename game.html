@@ -1,228 +1,160 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Breakout Game</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background-color: #000;
-    }
+import 'package:flutter/material.dart';
+import 'dart:async';
 
-    canvas {
-      display: none;
-      width: 100vw; /* Full screen width */
-      height: 100vh; /* Full screen height */
-      background: #111;
-    }
+void main() {
+  runApp(const BlockDestroyGame());
+}
 
-    .screen {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
-      background: #000;
-      color: #fff;
-      font-family: Arial, sans-serif;
-    }
+class BlockDestroyGame extends StatelessWidget {
+  const BlockDestroyGame({Key? key}) : super(key: key);
 
-    .screen button {
-      padding: 10px 20px;
-      margin-top: 20px;
-      font-size: 20px;
-      background: #ff0;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      initialRoute: '/start',
+      routes: {
+        '/start': (context) => const StartScreen(),
+        '/game': (context) => const GameScreen(),
+      },
+    );
+  }
+}
 
-    .screen button:hover {
-      background: #ffc107;
-    }
-  </style>
-</head>
-<body>
-  <div id="startScreen" class="screen">
-    <h1>Breakout Game</h1>
-    <button onclick="startGame()">Start Game</button>
-  </div>
+class StartScreen extends StatelessWidget {
+  const StartScreen({Key? key}) : super(key: key);
 
-  <div id="gameOverScreen" class="screen" style="display: none;">
-    <h1>Game Over</h1>
-    <button onclick="startGame()">Play Again</button>
-  </div>
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.purple, Colors.blue, Colors.red, Colors.green],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Block Destroy Game',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pushReplacementNamed('/game');
+                },
+                child: const Text('Start Game'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
-  <canvas id="gameCanvas"></canvas>
+class GameScreen extends StatefulWidget {
+  const GameScreen({Key? key}) : super(key: key);
 
-  <script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    const startScreen = document.getElementById('startScreen');
-    const gameOverScreen = document.getElementById('gameOverScreen');
+  @override
+  _GameScreenState createState() => _GameScreenState();
+}
 
-    // Set canvas size to fill the screen
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+class _GameScreenState extends State<GameScreen> {
+  double ballX = 0;
+  double ballY = 0.9;
+  double ballDX = 0.01;
+  double ballDY = -0.02;
 
-    // Game variables
-    let paddleWidth, paddleHeight, paddleX;
-    let ballRadius, ballX, ballY, ballDX, ballDY;
-    let brickRowCount, brickColumnCount, brickWidth, brickHeight, bricks;
-    let isGameRunning = false;
-    let touchStartX = 0;
+  double paddleX = 0;
+  double paddleWidth = 0.3;
 
-    function initializeGameVariables() {
-      paddleWidth = canvas.width / 5;
-      paddleHeight = 10;
-      paddleX = (canvas.width - paddleWidth) / 2;
+  List<List<bool>> blocks = [];
+  Timer? gameTimer;
 
-      ballRadius = 8;
-      ballX = canvas.width / 2;
-      ballY = canvas.height - 30;
-      ballDX = 3;
-      ballDY = -3;
+  @override
+  void initState() {
+    super.initState();
+    _initializeBlocks();
+    _startGame();
+  }
 
-      brickRowCount = 5;
-      brickColumnCount = 8;
-      brickWidth = canvas.width / brickColumnCount - 10;
-      brickHeight = 20;
-      bricks = [];
+  void _initializeBlocks() {
+    // Initialize a grid of blue tiles
+    blocks = [
+      [true, true, true, true, true],
+      [true, false, true, false, true],
+      [true, true, true, true, true],
+    ];
+  }
 
-      // Initialize bricks
-      for (let r = 0; r < brickRowCount; r++) {
-        bricks[r] = [];
-        for (let c = 0; c < brickColumnCount; c++) {
-          bricks[r][c] = { x: 0, y: 0, status: 1 };
-        }
-      }
-    }
-
-    function startGame() {
-      initializeGameVariables();
-      startScreen.style.display = 'none';
-      gameOverScreen.style.display = 'none';
-      canvas.style.display = 'block';
-      isGameRunning = true;
-      draw();
-    }
-
-    // Event listeners for touch controls
-    canvas.addEventListener('touchstart', (e) => {
-      touchStartX = e.touches[0].clientX;
+  void _startGame() {
+    gameTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      setState(() {
+        _moveBall();
+        _checkBlockCollisions();
+      });
     });
+  }
 
-    canvas.addEventListener('touchmove', (e) => {
-      const touchX = e.touches[0].clientX;
-      const deltaX = touchX - touchStartX;
+  void _moveBall() {
+    ballX += ballDX;
+    ballY += ballDY;
 
-      paddleX += deltaX;
+    // Wall collisions
+    if (ballX <= -1 || ballX >= 1) ballDX = -ballDX;
+    if (ballY <= -1) ballDY = -ballDY;
 
-      // Prevent paddle from moving out of bounds
-      if (paddleX < 0) paddleX = 0;
-      if (paddleX + paddleWidth > canvas.width) paddleX = canvas.width - paddleWidth;
-
-      touchStartX = touchX; // Update for continuous movement
-      e.preventDefault(); // Prevent scrolling
-    });
-
-    function drawBall() {
-      ctx.beginPath();
-      ctx.arc(ballX, ballY, ballRadius, 0, Math.PI * 2);
-      ctx.fillStyle = "#f00";
-      ctx.fill();
-      ctx.closePath();
+    // Paddle collision
+    if (ballY >= 0.85 &&
+        ballX >= paddleX - paddleWidth / 2 &&
+        ballX <= paddleX + paddleWidth / 2) {
+      ballDY = -ballDY;
     }
 
-    function drawPaddle() {
-      ctx.beginPath();
-      ctx.rect(paddleX, canvas.height - paddleHeight - 20, paddleWidth, paddleHeight);
-      ctx.fillStyle = "#0f0";
-      ctx.fill();
-      ctx.closePath();
-    }
+    // Game Over: Ball falls below the paddle
+    if (ballY > 1) _gameOver();
+  }
 
-    function drawBricks() {
-      for (let r = 0; r < brickRowCount; r++) {
-        for (let c = 0; c < brickColumnCount; c++) {
-          if (bricks[r][c].status === 1) {
-            let brickX = c * (brickWidth + 10) + 5;
-            let brickY = r * (brickHeight + 10) + 30;
-            bricks[r][c].x = brickX;
-            bricks[r][c].y = brickY;
+  void _checkBlockCollisions() {
+    double blockWidth = 2 / blocks[0].length;
+    double blockHeight = 0.2 / blocks.length;
 
-            ctx.beginPath();
-            ctx.rect(brickX, brickY, brickWidth, brickHeight);
-            ctx.fillStyle = "#ff0";
-            ctx.fill();
-            ctx.closePath();
+    bool hitAnyTile = false;
+
+    for (int i = 0; i < blocks.length; i++) {
+      for (int j = 0; j < blocks[i].length; j++) {
+        if (blocks[i][j]) {
+          double blockX = -1 + j * blockWidth;
+          double blockY = -1 + i * blockHeight;
+
+          // Check collision with the ball
+          if (ballX >= blockX &&
+              ballX <= blockX + blockWidth &&
+              ballY >= blockY &&
+              ballY <= blockY + blockHeight) {
+            blocks[i][j] = false; // Remove the tile
+            ballDY = -0.03; // Increase speed for blue tiles
+            hitAnyTile = true;
+            break;
           }
         }
       }
+      if (hitAnyTile) break;
     }
 
-    function collisionDetection() {
-      for (let r = 0; r < brickRowCount; r++) {
-        for (let c = 0; c < brickColumnCount; c++) {
-          let b = bricks[r][c];
-          if (b.status === 1) {
-            if (
-              ballX > b.x &&
-              ballX < b.x + brickWidth &&
-              ballY > b.y &&
-              ballY < b.y + brickHeight
-            ) {
-              ballDY = -ballDY;
-              b.status = 0;
-            }
-          }
-        }
-      }
-    }
+    // Game Over: Ball falls into an empty space (no tiles hit)
+   
 
-    function draw() {
-      if (!isGameRunning) return;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      drawBricks();
-      drawBall();
-      drawPaddle();
-      collisionDetection();
-
-      // Ball movement
-      ballX += ballDX;
-      ballY += ballDY;
-
-      // Ball collision with walls
-      if (ballX + ballRadius > canvas.width || ballX - ballRadius < 0) ballDX = -ballDX;
-      if (ballY - ballRadius < 0) ballDY = -ballDY;
-
-      // Ball collision with paddle
-      if (
-        ballY + ballRadius > canvas.height - paddleHeight - 20 &&
-        ballX > paddleX &&
-        ballX < paddleX + paddleWidth
-      ) {
-        ballDY = -ballDY;
-      }
-
-      // Game over
-      if (ballY + ballRadius > canvas.height) {
-        isGameRunning = false;
-        canvas.style.display = 'none';
-        gameOverScreen.style.display = 'flex';
-        return;
-      }
-
-      requestAnimationFrame(draw);
-    }
-  </script>
-</body>
-</html>
