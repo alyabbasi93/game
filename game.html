@@ -1,138 +1,72 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
-
-void main() {
-  runApp(const BlockDestroyGame());
-}
-
-class BlockDestroyGame extends StatelessWidget {
-  const BlockDestroyGame({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      initialRoute: '/start',
-      routes: {
-        '/start': (context) => const StartScreen(),
-        '/game': (context) => const GameScreen(),
-      },
-    );
-  }
-}
-
-class StartScreen extends StatelessWidget {
-  const StartScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.purple, Colors.blue, Colors.red, Colors.green],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text(
-                'Block Destroy Game',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pushReplacementNamed('/game');
-                },
-                child: const Text('Start Game'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+import '../models/level_model.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({Key? key}) : super(key: key);
-
   @override
   _GameScreenState createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> {
-  double ballX = 0;
-  double ballY = 0.9;
-  double ballDX = 0.01;
-  double ballDY = -0.02;
+  double ballX = 0.0;
+  double ballY = 0.0;
+  double ballDX = 0.02;
+  double ballDY = 0.02;
+  double paddleX = 0.4;
+  final double paddleWidth = 0.3;
 
-  double paddleX = 0;
-  double paddleWidth = 0.3;
-
+  int currentLevel = 0; // Start with the first level
   List<List<bool>> blocks = [];
-  Timer? gameTimer;
 
   @override
   void initState() {
     super.initState();
-    _initializeBlocks();
-    _startGame();
+    _loadLevel();
+    _startGameLoop();
   }
 
-  void _initializeBlocks() {
-    // Initialize a grid of blue tiles
-    blocks = [
-      [true, true, true, true, true],
-      [true, false, true, false, true],
-      [true, true, true, true, true],
-    ];
+  void _loadLevel() {
+    if (currentLevel >= Level.levels.length) {
+      // All levels completed, reset to the first level
+      currentLevel = 0;
+    }
+    blocks = Level.levels[currentLevel].layout.map((row) => [...row]).toList();
   }
 
-  void _startGame() {
-    gameTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+  void _startGameLoop() {
+    Future.delayed(Duration(milliseconds: 16), () {
+      if (!mounted) return;
       setState(() {
-        _moveBall();
-        _checkBlockCollisions();
+        _updateBallPosition();
       });
+      _startGameLoop();
     });
   }
 
-  void _moveBall() {
+  void _updateBallPosition() {
     ballX += ballDX;
     ballY += ballDY;
 
-    // Wall collisions
     if (ballX <= -1 || ballX >= 1) ballDX = -ballDX;
     if (ballY <= -1) ballDY = -ballDY;
 
-    // Paddle collision
-    if (ballY >= 0.85 &&
-        ballX >= paddleX - paddleWidth / 2 &&
-        ballX <= paddleX + paddleWidth / 2) {
+    if (ballY >= 0.9 && ballX >= paddleX && ballX <= paddleX + paddleWidth) {
       ballDY = -ballDY;
     }
 
-    // Game Over: Ball falls below the paddle
-    if (ballY > 1) _gameOver();
+    _checkBlockCollisions();
+
+    if (ballY > 1) {
+      _resetGame();
+    }
+
+    if (_allBlocksCleared()) {
+      _nextLevel();
+    }
   }
 
   void _checkBlockCollisions() {
     double blockWidth = 2 / blocks[0].length;
     double blockHeight = 0.2 / blocks.length;
-
-    bool hitAnyTile = false;
 
     for (int i = 0; i < blocks.length; i++) {
       for (int j = 0; j < blocks[i].length; j++) {
@@ -140,21 +74,98 @@ class _GameScreenState extends State<GameScreen> {
           double blockX = -1 + j * blockWidth;
           double blockY = -1 + i * blockHeight;
 
-          // Check collision with the ball
           if (ballX >= blockX &&
               ballX <= blockX + blockWidth &&
               ballY >= blockY &&
               ballY <= blockY + blockHeight) {
-            blocks[i][j] = false; // Remove the tile
-            ballDY = -0.03; // Increase speed for blue tiles
-            hitAnyTile = true;
-            break;
+            blocks[i][j] = false;
+            ballDY = -ballDY;
           }
         }
       }
-      if (hitAnyTile) break;
     }
+  }
 
-    // Game Over: Ball falls into an empty space (no tiles hit)
-   
+  bool _allBlocksCleared() {
+    for (var row in blocks) {
+      if (row.contains(true)) return false;
+    }
+    return true;
+  }
+
+  void _nextLevel() {
+    currentLevel++;
+    _loadLevel();
+    _resetBall();
+  }
+
+  void _resetGame() {
+    currentLevel = 0; // Reset to the first level
+    _loadLevel();
+    _resetBall();
+    Navigator.of(context).pushReplacementNamed('/start');
+  }
+
+  void _resetBall() {
+    ballX = 0.0;
+    ballY = 0.0;
+    ballDX = 0.02;
+    ballDY = 0.02;
+    paddleX = 0.4;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        setState(() {
+          paddleX += details.delta.dx / MediaQuery.of(context).size.width;
+          paddleX = paddleX.clamp(0.0, 1.0 - paddleWidth);
+        });
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Align(
+              alignment: Alignment(ballX, ballY),
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment(paddleX * 2 - 1, 0.95),
+              child: Container(
+                width: MediaQuery.of(context).size.width * paddleWidth,
+                height: 10,
+                color: Colors.blue,
+              ),
+            ),
+            for (int i = 0; i < blocks.length; i++)
+              for (int j = 0; j < blocks[i].length; j++)
+                if (blocks[i][j])
+                  Align(
+                    alignment: Alignment(
+                      -1 + j * (2 / blocks[i].length) + (1 / blocks[i].length),
+                      -1 + i * (0.2 / blocks.length) + (0.1 / blocks.length),
+                    ),
+                    child: Container(
+                      width: MediaQuery.of(context).size.width /
+                          blocks[i].length,
+                      height: MediaQuery.of(context).size.height * 0.2 /
+                          blocks.length,
+                      color: Colors.green,
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
